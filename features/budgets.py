@@ -20,6 +20,9 @@ def calc_manager_budgets(token, league_id, league_start_date, start_budget):
         raise RuntimeError(f"Failed to fetch activities: {e}")
 
     activities_df = pd.DataFrame(activities)
+    print("ACTIVITY COLUMNS:", activities_df.columns.tolist())
+print(activities_df.head())
+
 
     # Bonuses
     total_login_bonus = sum(entry.get("data", {}).get("bn", 0) for entry in login_bonus)
