@@ -35,13 +35,29 @@ def live_data_predictions(today_df, model, features):
 
 def join_current_squad(token, league_id, today_df_results):
     squad_players = get_players_in_squad(token, league_id)
-
     squad_df = pd.DataFrame(squad_players["it"])
 
-    # Join squad_df ("i") with today_df ("player_id")
+    # --- Robust detection of player-id column ---
+    SQUAD_ID_COL = (
+        "i" if "i" in squad_df.columns else
+        "pi" if "pi" in squad_df.columns else
+        None
+    )
+
+    if SQUAD_ID_COL is None:
+        raise RuntimeError(
+            f"Cannot determine squad player id column. Columns: {squad_df.columns.tolist()}"
+        )
+
+    # --- Merge with predictions ---
     squad_df = (
-        pd.merge(today_df_results, squad_df, left_on="player_id", right_on="i")
-        .drop(columns=["i"])
+        pd.merge(
+            today_df_results,
+            squad_df,
+            left_on="player_id",
+            right_on=SQUAD_ID_COL,
+        )
+        .drop(columns=[SQUAD_ID_COL])
     )
 
     # Rename prob to s_11_prob for better understanding
@@ -49,16 +65,26 @@ def join_current_squad(token, league_id, today_df_results):
         squad_df["prob"] = np.nan  # Placeholder for non-pro users
     squad_df = squad_df.rename(columns={"prob": "s_11_prob"})
 
-    # Rename mv_change_1d to mv_change_yesterday for better understanding
+    # Rename mv_change_1d to mv_change_yesterday
     squad_df = squad_df.rename(columns={"mv_change_1d": "mv_change_yesterday"})
 
-    # Rename "mv_x" to "mv" for better understanding
-    squad_df = squad_df.rename(columns={"mv_x": "mv"})
+    # Rename mv_x to mv (merge artifact)
+    if "mv_x" in squad_df.columns:
+        squad_df = squad_df.rename(columns={"mv_x": "mv"})
 
-    # Keep only relevant columns
-    squad_df = squad_df[["last_name", "team_name", "mv", "mv_change_yesterday", "predicted_mv_target", "s_11_prob"]]
+    # Keep only relevant columns (defensive)
+    keep_cols = [
+        "last_name",
+        "team_name",
+        "mv",
+        "mv_change_yesterday",
+        "predicted_mv_target",
+        "s_11_prob",
+    ]
+    squad_df = squad_df[[c for c in keep_cols if c in squad_df.columns]]
 
-    return squad_df 
+    return squad_df
+
 
 
 # TODO Add fail-safe check before player expires if the prob (starting 11) is still high, so no injuries or anything. if it dropped. dont bid / reccommend
