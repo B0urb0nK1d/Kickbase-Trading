@@ -1,40 +1,18 @@
-from kickbase_api.league import get_league_players_on_market
-from kickbase_api.user import get_players_in_squad
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-import pandas as pd
-import numpy as np
-
-def live_data_predictions(today_df, model, features):
-    """Make live data predictions for today_df using the trained model"""
-
-    # Set features and copy df
-    today_df_features = today_df[features]
-    today_df_results = today_df.copy()
-
-    # Predict mv_target
-    today_df_results["predicted_mv_target"] = np.round(model.predict(today_df_features), 2)
-
-    # Sort by predicted_mv_target descending
-    today_df_results = today_df_results.sort_values("predicted_mv_target", ascending=False)
-
-    # Filter date to today or yesterday if before 22:15, because mv is updated around 22:15
-    now = datetime.now(ZoneInfo("Europe/Berlin"))
-    cutoff_time = now.replace(hour=22, minute=15, second=0, microsecond=0)
-    date = (now - timedelta(days=1)) if now <= cutoff_time else now
-    date = date.date()
-
-    # Drop rows where NaN mv
-    today_df_results = today_df_results.dropna(subset=["mv"])
-
-    # Keep only relevant columns
-    today_df_results = today_df_results[["player_id", "first_name", "last_name", "position", "team_name", "date", "mv_change_1d", "mv_trend_1d", "mv", "predicted_mv_target"]]
-
-    return today_df_results
-
-
 def join_current_squad(token, league_id, today_df_results):
     squad_players = get_players_in_squad(token, league_id)
+
+    # --- RESET-SAFE: empty squad ---
+    if not squad_players or "it" not in squad_players or not squad_players["it"]:
+        print("No squad players found. Skipping squad recommendations.")
+        return pd.DataFrame(columns=[
+            "last_name",
+            "team_name",
+            "mv",
+            "mv_change_yesterday",
+            "predicted_mv_target",
+            "s_11_prob",
+        ])
+
     squad_df = pd.DataFrame(squad_players["it"])
 
     # --- Robust detection of player-id column ---
@@ -60,9 +38,9 @@ def join_current_squad(token, league_id, today_df_results):
         .drop(columns=[SQUAD_ID_COL])
     )
 
-    # Rename prob to s_11_prob for better understanding
+    # Rename prob to s_11_prob
     if "prob" not in squad_df.columns:
-        squad_df["prob"] = np.nan  # Placeholder for non-pro users
+        squad_df["prob"] = np.nan
     squad_df = squad_df.rename(columns={"prob": "s_11_prob"})
 
     # Rename mv_change_1d to mv_change_yesterday
@@ -72,7 +50,7 @@ def join_current_squad(token, league_id, today_df_results):
     if "mv_x" in squad_df.columns:
         squad_df = squad_df.rename(columns={"mv_x": "mv"})
 
-    # Keep only relevant columns (defensive)
+    # Keep only relevant columns
     keep_cols = [
         "last_name",
         "team_name",
@@ -84,6 +62,7 @@ def join_current_squad(token, league_id, today_df_results):
     squad_df = squad_df[[c for c in keep_cols if c in squad_df.columns]]
 
     return squad_df
+
 
 
 
